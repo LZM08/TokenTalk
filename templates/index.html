@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI Chatbot</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <style>
+        
+    </style>
+</head>
+<body>
+
+<div class="chatbox">
+    <div class="header">OpenAI Chatbot</div>
+    <div class="messages" id="messages"></div>
+    <div class="input-area" id="input-area">
+        <input type="text" id="user-input" placeholder="Type your message here..." required>
+        <button id="send-button">Chat</button>
+        <button id="img-button">Generate Image</button>
+    </div>
+</div>
+
+<script>
+    document.getElementById('send-button').addEventListener('click', async function(event) {
+        const userInput = document.getElementById('user-input').value;
+        const messagesDiv = document.getElementById('messages');
+        
+        if (userInput.trim() === "") return;  // 빈 입력 방지
+
+        // 사용자 입력 표시
+        messagesDiv.innerHTML += '<div class="message user">User: ' + userInput + '</div>';
+        
+        // 서버에 챗 메시지 전송
+        const response = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'message=' + encodeURIComponent(userInput)
+        });
+        
+        const data = await response.json();
+        
+        // 봇의 응답 표시
+        messagesDiv.innerHTML += '<div class="message bot">Bot: ' + data.reply + '</div>';
+        
+        // 메시지 영역 스크롤 최하단으로 이동
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        // 입력 필드 초기화
+        document.getElementById('user-input').value = '';
+    });
+
+    document.getElementById('img-button').addEventListener('click', async function(event) {
+        const userInput = document.getElementById('user-input').value;
+        const messagesDiv = document.getElementById('messages');
+
+        if (userInput.trim() === "") return;  // 빈 입력 방지
+
+        // 사용자 입력 표시
+        messagesDiv.innerHTML += '<div class="message user">User: ' + userInput + '</div>';
+        
+        // 서버에 이미지 생성 요청 전송
+        const response = await fetch('/generate_image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'message=' + encodeURIComponent(userInput)
+        });
+
+        const data = await response.json();
+        
+        // 생성된 이미지 표시
+        messagesDiv.innerHTML += '<div class="message bot">Bot: ' + data.reply + '</div>';
+        messagesDiv.innerHTML += '<img src="' + data.image_url + '" alt="Generated Image">';
+        
+        // 메시지 영역 스크롤 최하단으로 이동
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        // 입력 필드 초기화
+        document.getElementById('user-input').value = '';
+    });
+
+    // 엔터 키로 전송 기능 추가
+    document.getElementById('user-input').addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            document.getElementById('send-button').click();  // 클릭 이벤트 트리거
+        }
+    });
+</script>
+
+</body>
+</html>
