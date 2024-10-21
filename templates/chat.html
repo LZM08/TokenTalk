@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI Chatbot</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-auth-compat.min.js"></script>
+
+</head>
+<body>
+<div class="chatbox">
+    <div class="header">OpenAI Chatbot</div>
+    <div class="messages" id="messages"></div>
+    <div class="input-area" id="input-area">
+        <input type="text" id="user-input" placeholder="Type your message here..." required>
+        <button id="send-button">Chat</button>
+        <button id="img-button">Image</button>
+        <button id="logout-button">Logout</button>
+    </div>
+</div>
+
+<script>
+    const firebaseConfig = {
+            apiKey: "{{ firebase_config.apiKey }}",
+            authDomain: "{{ firebase_config.authDomain }}",
+            projectId: "{{ firebase_config.projectId }}",
+            storageBucket: "{{ firebase_config.storageBucket }}",
+            messagingSenderId: "{{ firebase_config.messagingSenderId }}",
+            appId: "{{ firebase_config.appId }}",
+            measurementId: "{{ firebase_config.measurementId }}"
+        };
+
+    const app = firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    // Event Listeners
+    document.getElementById('user-input').addEventListener('keypress', handleKeyPress);
+    document.getElementById('send-button').addEventListener('click', sendMessage);
+    document.getElementById('img-button').addEventListener('click', generateImage);
+    document.getElementById('logout-button').addEventListener('click', async function() {
+        try {
+            await auth.signOut();
+            const response = await fetch('/logout', { method: 'POST' });
+            
+            if (response.redirected) {
+                window.location.href = response.url;
+            }
+        } catch (error) {
+            console.error('Logout failed:', error);
+        }
+    });
+
+    function appendMessage(message, type, imageUrl = null) {
+        const messagesDiv = document.getElementById('messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}-message`;
+
+        if (imageUrl) {
+            messageDiv.innerHTML = `
+                <div>${message}</div>
+                <div class="image-message">
+                    <img src="${imageUrl}" alt="Generated Image">
+                </div>
+            `;
+        } else {
+            messageDiv.textContent = message;
+        }
+
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function handleKeyPress(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('user-input');
+        const message = input.value.trim();
+
+        if (message) {
+            appendMessage(message, 'user');
+            input.value = '';
+
+            const formData = new FormData();
+            formData.append('message', message);
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                appendMessage(data.reply, 'bot');
+            } catch (error) {
+                appendMessage('Error: ' + error.message, 'bot');
+            }
+        }
+    }
+
+    async function generateImage() {
+        const input = document.getElementById('user-input');
+        const prompt = input.value.trim();
+
+        if (prompt) {
+            appendMessage(`Generating image: "${prompt}"`, 'user');
+            input.value = '';
+
+            const formData = new FormData();
+            formData.append('message', prompt);
+
+            try {
+                const response = await fetch('/generate_image', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                appendMessage(data.reply, 'bot', data.image_url);
+            } catch (error) {
+                appendMessage('Image generation error: ' + error.message, 'bot');
+            }
+        }
+    }
+</script>
+</body>
+</html>

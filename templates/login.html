@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로그인</title>
+    <!-- Firebase 최신 버전 SDK 추가 -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #357abd;
+        }
+    </style>
+</head>
+<body>
+    <h1>TokenTalk 로그인</h1>
+    <button onclick="login()">Google로 로그인</button>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "{{ firebase_config.apiKey }}",
+            authDomain: "{{ firebase_config.authDomain }}",
+            projectId: "{{ firebase_config.projectId }}",
+            storageBucket: "{{ firebase_config.storageBucket }}",
+            messagingSenderId: "{{ firebase_config.messagingSenderId }}",
+            appId: "{{ firebase_config.appId }}",
+            measurementId: "{{ firebase_config.measurementId }}"
+        };
+    
+        // Firebase 초기화
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+    
+        // 로그인 상태 감지
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+                handleAuthenticatedUser(user);
+            }
+        });
+    
+        // 로그인 함수
+        async function login() {
+            try {
+                const provider = new firebase.auth.GoogleAuthProvider();
+                
+                // 계정 선택 프롬프트를 추가 (select_account)
+                provider.setCustomParameters({
+                    prompt: 'select_account' // 계정 선택 화면을 띄우기 위한 설정
+                });
+    
+                const result = await firebase.auth().signInWithPopup(provider);
+                await handleAuthenticatedUser(result.user);
+            } catch (error) {
+                console.error("로그인 에러:", error);
+                alert("로그인 중 오류가 발생했습니다: " + error.message);
+            }
+        }
+    
+        // 인증된 사용자 처리
+        async function handleAuthenticatedUser(user) {
+            try {
+                const idToken = await user.getIdToken();
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token: idToken }),
+                });
+    
+                const data = await response.json();
+                if (data.success) {
+                    window.location.href = data.redirect || '/chat';
+                } else {
+                    throw new Error(data.message);
+                }
+            } catch (error) {
+                console.error("서버 통신 에러:", error);
+                alert("서버 통신 중 오류가 발생했습니다: " + error.message);
+            }
+        }
+    </script>
+    
+</body>
+</html>
