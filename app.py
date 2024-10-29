@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, auth
+import re
 
 # 환경 변수 로드
 dotenv_path = os.path.join(os.path.dirname(__file__), 'apikey', '.env')
@@ -20,17 +21,44 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 firebase_config = {
-        "apiKey": os.getenv('FIREBASE_API_KEY'),
-        "authDomain": os.getenv('FIREBASE_AUTH_DOMAIN'),
-        "projectId": os.getenv('FIREBASE_PROJECT_ID'),
-        "storageBucket": os.getenv('FIREBASE_STORAGE_BUCKET'),
-        "messagingSenderId": os.getenv('FIREBASE_MESSAGING_SENDER_ID'),
-        "appId": os.getenv('FIREBASE_APP_ID'),
-        "measurementId": os.getenv('FIREBASE_MEASUREMENT_ID')
-    }
+    "apiKey": os.getenv('FIREBASE_API_KEY'),
+    "authDomain": os.getenv('FIREBASE_AUTH_DOMAIN'),
+    "projectId": os.getenv('FIREBASE_PROJECT_ID'),
+    "storageBucket": os.getenv('FIREBASE_STORAGE_BUCKET'),
+    "messagingSenderId": os.getenv('FIREBASE_MESSAGING_SENDER_ID'),
+    "appId": os.getenv('FIREBASE_APP_ID'),
+    "measurementId": os.getenv('FIREBASE_MEASUREMENT_ID')
+}
 
 # 대화 기록을 저장할 딕셔너리 (사용자별로 구분)
 conversation_histories = {}
+
+# 이미지 관련 키워드 패턴
+IMAGE_KEYWORDS = [
+    r'그림', r'이미지', r'사진', r'picture', r'image', r'photo', r'draw',
+    r'생성해', r'만들어', r'그려', r'보여줘', r'визуализировать', 
+    r'illustrate', r'visualize', r'display', r'create', r'generate'
+]
+
+def contains_image_keywords(text):
+    """메시지에 이미지 관련 키워드가 포함되어 있는지 확인"""
+    pattern = '|'.join(IMAGE_KEYWORDS)
+    return bool(re.search(pattern, text.lower()))
+
+def generate_image(prompt):
+    """DALL-E를 사용하여 이미지 생성"""
+    try:
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        return response.data[0].url
+    except Exception as e:
+        print(f"Image generation error: {str(e)}")
+        return None
 
 @app.route('/login', methods=['POST'])
 def login_post():
@@ -46,59 +74,61 @@ def login_post():
             return jsonify({'success': False, 'message': str(e)}), 400
     return jsonify({'success': False, 'message': 'Invalid request'}), 400
 
-
 @app.route('/login')
 def login_get():
-    # Firebase 설정을 템플릿에 전달
     return render_template('login.html', firebase_config=firebase_config)
-
 
 @app.route('/')
 def home():
     return redirect('/login')
 
-
 @app.route('/chat')
 def chat_page():
     if 'user_id' not in session:
-        return redirect('/login')  # 'firebase_config'는 이제 필요 없음
+        return redirect('/login')
     return render_template('chat.html', firebase_config=firebase_config)
 
-
-
-@app.route('/logout', methods=['POST'])  # POST 메서드로 설정
+@app.route('/logout', methods=['POST'])
 def logout():
     session.clear()  # 세션 지우기
 
     # 세션 쿠키 삭제
-    resp = make_response(redirect(url_for('login_get')))  # 로그인 페이지로 리디렉션
-    resp.set_cookie('user_id', '', expires=0)  # 쿠키를 만료시켜 삭제
+    resp = make_response(redirect(url_for('login_get')))
+    resp.set_cookie('user_id', '', expires=0)
 
     # 캐시 방지 설정
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
 
-    return resp  # 수정된 응답 반환
-
+    return resp
 
 def get_openai_response(user_input, user_id):
+    """사용자 요청에 따라 OpenAI API를 사용하여 텍스트 또는 이미지 응답 생성"""
     if user_id not in conversation_histories:
         conversation_histories[user_id] = []
     
-    conversation_histories[user_id].append({"role": "user", "content": user_input})
+    # 이미지 키워드가 있는지 확인
+    should_generate_image = contains_image_keywords(user_input)
     
+    # 이미지 생성 로직
+    if should_generate_image:
+        image_prompt = f"Generate an image for: '{user_input}'"
+        image_url = generate_image(image_prompt)
+        return None, image_url  # 텍스트 응답 없이 이미지 URL만 반환
+
+    # 텍스트 응답 생성 로직
+    conversation_histories[user_id].append({"role": "user", "content": user_input})
     try:
         response = client.chat.completions.create(
-            model="gpt-4",  # gpt-4o 대신 gpt-4 사용
+            model="gpt-4o",
             messages=conversation_histories[user_id]
         )
         bot_reply = response.choices[0].message.content
         conversation_histories[user_id].append({"role": "assistant", "content": bot_reply})
-        return bot_reply
+        return bot_reply, None  # 텍스트 응답만 반환, 이미지 없음
     except Exception as e:
-        return f"Error: {str(e)}"
-
+        return f"Error: {str(e)}", None
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -106,9 +136,15 @@ def chat():
         return jsonify({'error': 'Unauthorized'}), 401
     
     user_message = request.form['message']
-    bot_reply = get_openai_response(user_message, session['user_id'])
-    return jsonify({'reply': bot_reply})
-
+    bot_reply, image_url = get_openai_response(user_message, session['user_id'])
+    
+    response_data = {}
+    if bot_reply:
+        response_data['reply'] = bot_reply
+    if image_url:
+        response_data['image_url'] = image_url
+    
+    return jsonify(response_data)
 
 @app.route('/generate_image', methods=['POST'])
 def generate_image_route():
@@ -117,15 +153,11 @@ def generate_image_route():
 
     try:
         # 이미지 생성 요청을 OpenAI API에 보내기
-        response = client.images.generate(
-            model="dall-e-3",
-            prompt=request.form['message'],
-            size="1024x1024",
-            quality="standard",
-            n=1,
-        )
-        image_url = response.data[0].url
-        return jsonify({'reply': "이미지를 생성했습니다.", 'image_url': image_url})
+        image_url = generate_image(request.form['message'])
+        if image_url:
+            return jsonify({'image_url': image_url})  # 'reply' 없이 image_url만 반환
+        else:
+            return jsonify({'error': 'Failed to generate image'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

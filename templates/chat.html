@@ -7,7 +7,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-app-compat.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-auth-compat.min.js"></script>
-
 </head>
 <body>
 <div class="chatbox">
@@ -16,21 +15,21 @@
     <div class="input-area" id="input-area">
         <input type="text" id="user-input" placeholder="Type your message here..." required>
         <button id="send-button">Chat</button>
-        <button id="img-button">Image</button>
+        <!-- <button id="img-button">Image</button> -->
         <button id="logout-button">Logout</button>
     </div>
 </div>
 
 <script>
     const firebaseConfig = {
-            apiKey: "{{ firebase_config.apiKey }}",
-            authDomain: "{{ firebase_config.authDomain }}",
-            projectId: "{{ firebase_config.projectId }}",
-            storageBucket: "{{ firebase_config.storageBucket }}",
-            messagingSenderId: "{{ firebase_config.messagingSenderId }}",
-            appId: "{{ firebase_config.appId }}",
-            measurementId: "{{ firebase_config.measurementId }}"
-        };
+        apiKey: "{{ firebase_config.apiKey }}",
+        authDomain: "{{ firebase_config.authDomain }}",
+        projectId: "{{ firebase_config.projectId }}",
+        storageBucket: "{{ firebase_config.storageBucket }}",
+        messagingSenderId: "{{ firebase_config.messagingSenderId }}",
+        appId: "{{ firebase_config.appId }}",
+        measurementId: "{{ firebase_config.measurementId }}"
+    };
 
     const app = firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
@@ -39,33 +38,41 @@
     document.getElementById('user-input').addEventListener('keypress', handleKeyPress);
     document.getElementById('send-button').addEventListener('click', sendMessage);
     document.getElementById('img-button').addEventListener('click', generateImage);
-    document.getElementById('logout-button').addEventListener('click', async function() {
+    document.getElementById('logout-button').addEventListener('click', handleLogout);
+
+    async function handleLogout() {
         try {
             await auth.signOut();
             const response = await fetch('/logout', { method: 'POST' });
-            
             if (response.redirected) {
                 window.location.href = response.url;
             }
         } catch (error) {
             console.error('Logout failed:', error);
         }
-    });
+    }
 
     function appendMessage(message, type, imageUrl = null) {
         const messagesDiv = document.getElementById('messages');
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}-message`;
 
+        // 텍스트 메시지 추가
+        const textDiv = document.createElement('div');
+        textDiv.textContent = message;
+        messageDiv.appendChild(textDiv);
+
+        // 이미지가 있다면 추가
         if (imageUrl) {
-            messageDiv.innerHTML = `
-                <div>${message}</div>
-                <div class="image-message">
-                    <img src="${imageUrl}" alt="Generated Image">
-                </div>
-            `;
-        } else {
-            messageDiv.textContent = message;
+            const imageDiv = document.createElement('div');
+            imageDiv.className = 'image-message';
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.alt = 'Generated Image';
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            imageDiv.appendChild(img);
+            messageDiv.appendChild(imageDiv);
         }
 
         messagesDiv.appendChild(messageDiv);
@@ -95,7 +102,9 @@
                     body: formData
                 });
                 const data = await response.json();
-                appendMessage(data.reply, 'bot');
+                
+                // 챗봇 응답 표시
+                appendMessage(data.reply, 'bot', data.image_url);
             } catch (error) {
                 appendMessage('Error: ' + error.message, 'bot');
             }
@@ -107,8 +116,7 @@
         const prompt = input.value.trim();
 
         if (prompt) {
-            appendMessage(`Generating image: "${prompt}"`, 'user');
-            input.value = '';
+            input.value = '';  // 입력 필드 초기화
 
             const formData = new FormData();
             formData.append('message', prompt);
@@ -119,12 +127,17 @@
                     body: formData
                 });
                 const data = await response.json();
-                appendMessage(data.reply, 'bot', data.image_url);
+
+                // 텍스트 없이 이미지 URL만 추가
+                if (data.image_url) {
+                    appendMessage('', 'bot', data.image_url); // 빈 문자열을 텍스트로 전달
+                }
             } catch (error) {
                 appendMessage('Image generation error: ' + error.message, 'bot');
             }
         }
     }
+
 </script>
 </body>
 </html>
