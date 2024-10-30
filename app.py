@@ -66,6 +66,7 @@ def login_post():
         data = request.get_json()
         token = data.get('token')
         try:
+            # clock_skew 인수 제거
             decoded_token = auth.verify_id_token(token)
             uid = decoded_token['uid']
             session['user_id'] = uid
@@ -160,6 +161,7 @@ def generate_image_route():
             return jsonify({'error': 'Failed to generate image'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)

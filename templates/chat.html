@@ -15,7 +15,6 @@
     <div class="input-area" id="input-area">
         <input type="text" id="user-input" placeholder="Type your message here..." required>
         <button id="send-button">Chat</button>
-        <!-- <button id="img-button">Image</button> -->
         <button id="logout-button">Logout</button>
     </div>
 </div>
@@ -37,18 +36,17 @@
     // Event Listeners
     document.getElementById('user-input').addEventListener('keypress', handleKeyPress);
     document.getElementById('send-button').addEventListener('click', sendMessage);
-    document.getElementById('img-button').addEventListener('click', generateImage);
     document.getElementById('logout-button').addEventListener('click', handleLogout);
 
     async function handleLogout() {
         try {
-            await auth.signOut();
-            const response = await fetch('/logout', { method: 'POST' });
+            await auth.signOut(); // Firebase Auth 로그아웃
+            const response = await fetch('/logout', { method: 'POST' }); // 서버에 로그아웃 요청
             if (response.redirected) {
-                window.location.href = response.url;
+                window.location.href = response.url; // 리디렉션 처리
             }
         } catch (error) {
-            console.error('Logout failed:', error);
+            console.error('Logout failed:', error); // 로그아웃 실패 시 에러 처리
         }
     }
 
