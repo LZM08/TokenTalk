@@ -14,10 +14,10 @@
 <div class="chatbox">
     <div class="header">
         <span>OpenAI Chatbot</span>
-        <button id="logout-button" title="Logout"><i class="fas fa-sign-out-alt"></i></button>
-        <button id="clear-button" title="Clear Chat"><i class="fas fa-trash"></i></button>
+        <button id="logout-button" title="Logout" aria-label="Logout"><i class="fas fa-sign-out-alt"></i></button>
+        <button id="clear-button" title="Clear Chat" aria-label="Clear Chat"><i class="fas fa-trash"></i></button>
     </div>
-    <div id="chat-container">
+    <div id="chat-container" aria-live="polite" aria-relevant="all">
         {% for message in chat_history %}
             <div class="{{ message.role }}">
                 <strong>{{ message.role }}</strong>: {{ message.content }}
@@ -25,7 +25,7 @@
         {% endfor %}
     </div>
     <div class="input-area" id="input-area">
-        <input type="text" id="user-input" placeholder="Type your message here..." required>
+        <input type="text" id="user-input" placeholder="Type your message here..." required aria-label="User message input">
         <button id="send-button">Send</button>
     </div>
 </div>
@@ -65,17 +65,20 @@
             }
         } catch (error) {
             console.error('Logout failed:', error);
+            alert('Logout failed. Please try again.'); // 사용자에게 오류 알림
         }
     }
 
     async function clearChatHistory() {
         const userId = auth.currentUser.uid;
-        await db.collection('chatHistory').where('userId', '==', userId).get().then(snapshot => {
-            snapshot.forEach(doc => {
-                doc.ref.delete();
-            });
-        });
-        document.getElementById('chat-container').innerHTML = ''; // 채팅창 비우기
+        try {
+            const snapshot = await db.collection('chatHistory').where('userId', '==', userId).get();
+            snapshot.forEach(doc => doc.ref.delete());
+            document.getElementById('chat-container').innerHTML = ''; // 채팅창 비우기
+        } catch (error) {
+            console.error('Error clearing chat history:', error);
+            alert('Failed to clear chat history. Please try again.'); // 사용자에게 오류 알림
+        }
     }
 
     function appendMessage(message, type) {
@@ -84,10 +87,10 @@
         messageDiv.className = type;
 
         const textDiv = document.createElement('div');
-        textDiv.textContent = message;
+        textDiv.innerHTML = message; // 메시지에 HTML 허용
         messageDiv.appendChild(textDiv);
         messagesDiv.appendChild(messageDiv);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        messagesDiv.scrollTop = messagesDiv.scrollHeight; // 스크롤을 맨 아래로
     }
 
     function handleKeyPress(event) {
@@ -112,10 +115,18 @@
                     method: 'POST',
                     body: formData
                 });
-                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json(); // JSON으로 응답받기
                 if (data.reply) {
                     appendMessage(data.reply, 'bot');
                     await saveMessage(auth.currentUser.uid, message, data.reply);
+                }
+                if (data.image_url) { // 이미지 URL이 있는 경우
+                    appendMessage(`<img src="${data.image_url}" alt="Generated Image" style="max-width: 100%; height: auto;" />`, 'bot');
                 }
             } catch (error) {
                 appendMessage('Error: ' + error.message, 'bot');
@@ -133,6 +144,7 @@
             });
         } catch (error) {
             console.error('Error saving message:', error);
+            alert('Failed to save message. Please try again.'); // 사용자에게 오류 알림
         }
     }
 

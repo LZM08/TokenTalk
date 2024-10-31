@@ -5,14 +5,16 @@ from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 import re
+from flask_cors import CORS
 
+app = Flask(__name__)
+CORS(app)
 # 환경 변수 로드
 dotenv_path = os.path.join(os.path.dirname(__file__), 'apikey', '.env')
 load_dotenv(dotenv_path)
 API_KEY = os.environ['OPENAI_API_KEY']
 client = OpenAI(api_key=API_KEY)
 
-app = Flask(__name__)
 app.secret_key = os.urandom(24)  # 세션 관리를 위한 시크릿 키
 
 # Firebase 초기화
@@ -51,6 +53,9 @@ def contains_image_keywords(text):
     pattern = '|'.join(IMAGE_KEYWORDS)
     return bool(re.search(pattern, text.lower()))
 
+
+
+
 def generate_image(prompt):
     """DALL-E를 사용하여 이미지 생성"""
     try:
@@ -65,6 +70,9 @@ def generate_image(prompt):
     except Exception as e:
         print(f"Image generation error: {str(e)}")
         return None
+
+
+
 
 @app.route('/login', methods=['POST'])
 def login_post():
@@ -134,6 +142,8 @@ def load_chat_history(user_id):
     else:
         return []  # 데이터가 없을 경우 빈 리스트 반환
 
+
+
 def get_openai_response(user_input, user_id):
     """사용자 요청에 따라 OpenAI API를 사용하여 텍스트 또는 이미지 응답 생성"""
     if user_id not in conversation_histories:
@@ -146,7 +156,11 @@ def get_openai_response(user_input, user_id):
     if should_generate_image:
         image_prompt = f"Generate an image for: '{user_input}'"
         image_url = generate_image(image_prompt)
-        return None, image_url  # 텍스트 응답 없이 이미지 URL만 반환
+        print(image_url)
+        return {'reply': None, 'image_url': image_url} # 텍스트 응답 없이 이미지 URL만 반환
+
+
+
 
     # 텍스트 응답 생성 로직
     conversation_histories[user_id].append({"role": "user", "content": user_input})
@@ -165,6 +179,8 @@ def get_openai_response(user_input, user_id):
     except Exception as e:
         return f"Error: {str(e)}", None
 
+
+
 @app.route('/chat', methods=['POST'])
 def chat():
     if 'user_id' not in session:
@@ -181,6 +197,9 @@ def chat():
     
     return jsonify(response_data)
 
+
+
+
 @app.route('/generate_image', methods=['POST'])
 def generate_image_route():
     if 'user_id' not in session:
@@ -195,6 +214,8 @@ def generate_image_route():
             return jsonify({'error': 'Failed to generate image'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
