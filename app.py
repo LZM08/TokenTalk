@@ -21,7 +21,7 @@ app.secret_key = os.urandom(24)  # 세션 관리를 위한 시크릿 키
 if not firebase_admin._apps:
     cred = credentials.Certificate("apikey/tokentalk-7662f-firebase-adminsdk-hokx1-8d7a9325b2.json")
     firebase_admin.initialize_app(cred, {
-        'databaseURL': 'https://tokentalk-7662f-default-rtdb.firebaseio.com/'  # 데이터베이스 URL 입력
+        'databaseURL': 'https://tokentalk-7662f-default-rtdb.firebaseio.com/'
     })
 
 # Firestore 초기화
@@ -53,9 +53,6 @@ def contains_image_keywords(text):
     pattern = '|'.join(IMAGE_KEYWORDS)
     return bool(re.search(pattern, text.lower()))
 
-
-
-
 def generate_image(prompt):
     """DALL-E를 사용하여 이미지 생성"""
     try:
@@ -71,9 +68,6 @@ def generate_image(prompt):
         print(f"Image generation error: {str(e)}")
         return None
 
-
-
-
 @app.route('/login', methods=['POST'])
 def login_post():
     if request.is_json:
@@ -86,7 +80,7 @@ def login_post():
 
             # Firebase에서 채팅 기록 로드
             conversation_histories[uid] = load_chat_history(uid)
-            print(f"Loaded chat history for user {uid}: {conversation_histories[uid]}")  # 디버그용
+            print(f"Loaded chat history for user {uid}: {conversation_histories[uid]}")
 
             return jsonify({'success': True, 'uid': uid, 'redirect': '/chat'})
         except Exception as e:
@@ -114,16 +108,16 @@ def chat_page():
 @app.route('/logout', methods=['POST'])
 def logout():
     session.clear()  # 세션 지우기
-
+    
     # 세션 쿠키 삭제
     resp = make_response(redirect(url_for('login_get')))
     resp.set_cookie('user_id', '', expires=0)
-
+    
     # 캐시 방지 설정
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
-
+    
     return resp
 
 def save_conversation_history(user_id):
@@ -134,52 +128,13 @@ def save_conversation_history(user_id):
 
 def load_chat_history(user_id):
     """Firebase에서 사용자 채팅 기록을 불러오기"""
-    doc_ref = db.collection('chat_histories').document(user_id)  # Firestore 문서 참조
+    doc_ref = db.collection('chat_histories').document(user_id)
     history = doc_ref.get()
     
     if history.exists:
-        return history.to_dict().get('history', [])  # 데이터가 있으면 'history' 키의 값을 반환
+        return history.to_dict().get('history', [])
     else:
-        return []  # 데이터가 없을 경우 빈 리스트 반환
-
-
-
-def get_openai_response(user_input, user_id):
-    """사용자 요청에 따라 OpenAI API를 사용하여 텍스트 또는 이미지 응답 생성"""
-    if user_id not in conversation_histories:
-        conversation_histories[user_id] = []
-    
-    # 이미지 키워드가 있는지 확인
-    should_generate_image = contains_image_keywords(user_input)
-    
-    # 이미지 생성 로직
-    if should_generate_image:
-        image_prompt = f"Generate an image for: '{user_input}'"
-        image_url = generate_image(image_prompt)
-        print(image_url)
-        return {'reply': None, 'image_url': image_url} # 텍스트 응답 없이 이미지 URL만 반환
-
-
-
-
-    # 텍스트 응답 생성 로직
-    conversation_histories[user_id].append({"role": "user", "content": user_input})
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=conversation_histories[user_id]
-        )
-        bot_reply = response.choices[0].message.content
-        conversation_histories[user_id].append({"role": "assistant", "content": bot_reply})
-        
-        # 대화 기록 저장
-        save_conversation_history(user_id)
-
-        return bot_reply, None  # 텍스트 응답만 반환, 이미지 없음
-    except Exception as e:
-        return f"Error: {str(e)}", None
-
-
+        return []
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -187,35 +142,52 @@ def chat():
         return jsonify({'error': 'Unauthorized'}), 401
     
     user_message = request.form['message']
-    bot_reply, image_url = get_openai_response(user_message, session['user_id'])
+    user_id = session['user_id']
     
-    response_data = {}
-    if bot_reply:
-        response_data['reply'] = bot_reply
-    if image_url:
-        response_data['image_url'] = image_url
+    # 이미지 키워드 확인
+    if contains_image_keywords(user_message):
+        try:
+            image_url = generate_image(user_message)
+            if image_url:
+                # 이미지 URL과 함께 간단한 응답 메시지 반환
+                response_data = {
+                    'reply': "이미지를 생성했습니다:",
+                    'image_url': image_url
+                }
+                # 대화 기록에 저장
+                if user_id not in conversation_histories:
+                    conversation_histories[user_id] = []
+                conversation_histories[user_id].append({"role": "user", "content": user_message})
+                conversation_histories[user_id].append({"role": "assistant", "content": "이미지를 생성했습니다."})
+                save_conversation_history(user_id)
+                return jsonify(response_data)
+            else:
+                return jsonify({
+                    'reply': "이미지 생성에 실패했습니다. 다시 시도해주세요."
+                })
+        except Exception as e:
+            return jsonify({
+                'reply': f"이미지 생성 중 오류가 발생했습니다: {str(e)}"
+            })
     
-    return jsonify(response_data)
-
-
-
-
-@app.route('/generate_image', methods=['POST'])
-def generate_image_route():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
-
+    # 일반 텍스트 응답
     try:
-        # 이미지 생성 요청을 OpenAI API에 보내기
-        image_url = generate_image(request.form['message'])
-        if image_url:
-            return jsonify({'image_url': image_url})  # 'reply' 없이 image_url만 반환
-        else:
-            return jsonify({'error': 'Failed to generate image'}), 500
+        if user_id not in conversation_histories:
+            conversation_histories[user_id] = []
+        
+        conversation_histories[user_id].append({"role": "user", "content": user_message})
+        response = client.chat.completions.create(
+            model="gpt-4o",  # 수정된 모델명
+            messages=conversation_histories[user_id]
+        )
+        bot_reply = response.choices[0].message.content
+        conversation_histories[user_id].append({"role": "assistant", "content": bot_reply})
+        
+        save_conversation_history(user_id)
+        return jsonify({'reply': bot_reply})
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
+        return jsonify({'reply': f"Error: {str(e)}"})
 
 if __name__ == '__main__':
     app.run(debug=True)

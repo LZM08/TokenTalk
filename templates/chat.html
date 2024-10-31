@@ -119,20 +119,26 @@
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
-
+                
                 const data = await response.json(); // JSON으로 응답받기
                 if (data.reply) {
                     appendMessage(data.reply, 'bot');
-                    await saveMessage(auth.currentUser.uid, message, data.reply);
+                    
                 }
                 if (data.image_url) { // 이미지 URL이 있는 경우
                     appendMessage(`<img src="${data.image_url}" alt="Generated Image" style="max-width: 100%; height: auto;" />`, 'bot');
+                }
+                if (data.reply || data.image_url) {
+                    await saveMessage(auth.currentUser.uid, message, data.reply || 'Image generated');
                 }
             } catch (error) {
                 appendMessage('Error: ' + error.message, 'bot');
             }
         }
     }
+
+
+
 
     async function saveMessage(userId, userMessage, botReply) {
         try {
