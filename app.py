@@ -3,7 +3,7 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 import firebase_admin
-from firebase_admin import credentials, auth
+from firebase_admin import credentials, auth, firestore
 import re
 
 # 환경 변수 로드
@@ -18,8 +18,14 @@ app.secret_key = os.urandom(24)  # 세션 관리를 위한 시크릿 키
 # Firebase 초기화
 if not firebase_admin._apps:
     cred = credentials.Certificate("apikey/tokentalk-7662f-firebase-adminsdk-hokx1-8d7a9325b2.json")
-    firebase_admin.initialize_app(cred)
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://tokentalk-7662f-default-rtdb.firebaseio.com/'  # 데이터베이스 URL 입력
+    })
 
+# Firestore 초기화
+db = firestore.client()
+
+# Firebase 설정
 firebase_config = {
     "apiKey": os.getenv('FIREBASE_API_KEY'),
     "authDomain": os.getenv('FIREBASE_AUTH_DOMAIN'),
@@ -66,10 +72,14 @@ def login_post():
         data = request.get_json()
         token = data.get('token')
         try:
-            # clock_skew 인수 제거
             decoded_token = auth.verify_id_token(token)
             uid = decoded_token['uid']
             session['user_id'] = uid
+
+            # Firebase에서 채팅 기록 로드
+            conversation_histories[uid] = load_chat_history(uid)
+            print(f"Loaded chat history for user {uid}: {conversation_histories[uid]}")  # 디버그용
+
             return jsonify({'success': True, 'uid': uid, 'redirect': '/chat'})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)}), 400
@@ -87,7 +97,11 @@ def home():
 def chat_page():
     if 'user_id' not in session:
         return redirect('/login')
-    return render_template('chat.html', firebase_config=firebase_config)
+
+    user_id = session['user_id']
+    chat_history = conversation_histories.get(user_id, [])
+    
+    return render_template('chat.html', firebase_config=firebase_config, chat_history=chat_history)
 
 @app.route('/logout', methods=['POST'])
 def logout():
@@ -103,6 +117,22 @@ def logout():
     resp.headers['Expires'] = '0'
 
     return resp
+
+def save_conversation_history(user_id):
+    """대화 기록을 Firestore에 저장"""
+    db.collection('conversations').document(user_id).set({
+        'history': conversation_histories[user_id]
+    })
+
+def load_chat_history(user_id):
+    """Firebase에서 사용자 채팅 기록을 불러오기"""
+    doc_ref = db.collection('chat_histories').document(user_id)  # Firestore 문서 참조
+    history = doc_ref.get()
+    
+    if history.exists:
+        return history.to_dict().get('history', [])  # 데이터가 있으면 'history' 키의 값을 반환
+    else:
+        return []  # 데이터가 없을 경우 빈 리스트 반환
 
 def get_openai_response(user_input, user_id):
     """사용자 요청에 따라 OpenAI API를 사용하여 텍스트 또는 이미지 응답 생성"""
@@ -127,6 +157,10 @@ def get_openai_response(user_input, user_id):
         )
         bot_reply = response.choices[0].message.content
         conversation_histories[user_id].append({"role": "assistant", "content": bot_reply})
+        
+        # 대화 기록 저장
+        save_conversation_history(user_id)
+
         return bot_reply, None  # 텍스트 응답만 반환, 이미지 없음
     except Exception as e:
         return f"Error: {str(e)}", None
@@ -161,7 +195,6 @@ def generate_image_route():
             return jsonify({'error': 'Failed to generate image'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(debug=True)

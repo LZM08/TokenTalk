@@ -7,28 +7,29 @@
     <!-- Firebase 최신 버전 SDK 추가 -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script> <!-- Firestore 추가 -->
     <style>
-            body {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                margin: 0;
-                font-family: Arial, sans-serif;
-            }
-            button {
-                padding: 10px 20px;
-                font-size: 16px;
-                cursor: pointer;
-                background-color: #4285f4;
-                color: white;
-                border: none;
-                border-radius: 5px;
-            }
-            button:hover {
-                background-color: #357abd;
-            }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #357abd;
+        }
     </style>
 </head>
 <body>
@@ -45,37 +46,34 @@
             appId: "{{ firebase_config.appId }}",
             measurementId: "{{ firebase_config.measurementId }}"
         };
-    
+
         // Firebase 초기화
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
 
-        // Auth 인스턴스 설정
         const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Auth 인스턴스 설정
         auth.settings.appVerificationDisabledForTesting = true; // 개발 환경에서만 사용
-    
+
         // 로그인 상태 감지
         auth.onAuthStateChanged((user) => {
             if (user) {
                 handleAuthenticatedUser(user);
             }
         });
-    
+
         // 로그인 함수
         async function login() {
             try {
                 const provider = new firebase.auth.GoogleAuthProvider();
-                provider.setCustomParameters({
-                    prompt: 'select_account'
-                });
-    
+                provider.setCustomParameters({ prompt: 'select_account' });
+
                 const result = await auth.signInWithPopup(provider);
                 
-                // 토큰 갱신 로직 추가
-                const forceRefresh = true; // 강제로 토큰 갱신
-                const idToken = await result.user.getIdToken(forceRefresh);
-                
+                // 사용자 처리
                 await handleAuthenticatedUser(result.user);
             } catch (error) {
                 console.error("로그인 에러:", error);
@@ -86,11 +84,11 @@
                 }
             }
         }
-    
+
         // 인증된 사용자 처리
         async function handleAuthenticatedUser(user) {
             try {
-                // 토큰 갱신 로직 추가
+                // ID 토큰 갱신
                 const forceRefresh = true;
                 const idToken = await user.getIdToken(forceRefresh);
 
@@ -111,7 +109,7 @@
                                 timestamp: Date.now() // 클라이언트 타임스탬프 추가
                             }),
                         });
-    
+
                         const data = await response.json();
                         if (data.success) {
                             window.location.href = data.redirect || '/chat';

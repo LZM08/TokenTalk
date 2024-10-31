@@ -7,15 +7,26 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-app-compat.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-auth-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-firestore-compat.min.js"></script>
+    <link rel="stylesheet" href="static/styles.css">
 </head>
 <body>
 <div class="chatbox">
-    <div class="header">OpenAI Chatbot</div>
-    <div class="messages" id="messages"></div>
+    <div class="header">
+        <span>OpenAI Chatbot</span>
+        <button id="logout-button" title="Logout"><i class="fas fa-sign-out-alt"></i></button>
+        <button id="clear-button" title="Clear Chat"><i class="fas fa-trash"></i></button>
+    </div>
+    <div id="chat-container">
+        {% for message in chat_history %}
+            <div class="{{ message.role }}">
+                <strong>{{ message.role }}</strong>: {{ message.content }}
+            </div>
+        {% endfor %}
+    </div>
     <div class="input-area" id="input-area">
         <input type="text" id="user-input" placeholder="Type your message here..." required>
-        <button id="send-button">Chat</button>
-        <button id="logout-button">Logout</button>
+        <button id="send-button">Send</button>
     </div>
 </div>
 
@@ -32,47 +43,49 @@
 
     const app = firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
+    const db = firebase.firestore();
 
-    // Event Listeners
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            await loadChatHistory(user.uid);
+        }
+    });
+
     document.getElementById('user-input').addEventListener('keypress', handleKeyPress);
     document.getElementById('send-button').addEventListener('click', sendMessage);
     document.getElementById('logout-button').addEventListener('click', handleLogout);
+    document.getElementById('clear-button').addEventListener('click', clearChatHistory);
 
     async function handleLogout() {
         try {
-            await auth.signOut(); // Firebase Auth 로그아웃
-            const response = await fetch('/logout', { method: 'POST' }); // 서버에 로그아웃 요청
+            await auth.signOut();
+            const response = await fetch('/logout', { method: 'POST' });
             if (response.redirected) {
-                window.location.href = response.url; // 리디렉션 처리
+                window.location.href = response.url;
             }
         } catch (error) {
-            console.error('Logout failed:', error); // 로그아웃 실패 시 에러 처리
+            console.error('Logout failed:', error);
         }
     }
 
-    function appendMessage(message, type, imageUrl = null) {
-        const messagesDiv = document.getElementById('messages');
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}-message`;
+    async function clearChatHistory() {
+        const userId = auth.currentUser.uid;
+        await db.collection('chatHistory').where('userId', '==', userId).get().then(snapshot => {
+            snapshot.forEach(doc => {
+                doc.ref.delete();
+            });
+        });
+        document.getElementById('chat-container').innerHTML = ''; // 채팅창 비우기
+    }
 
-        // 텍스트 메시지 추가
+    function appendMessage(message, type) {
+        const messagesDiv = document.getElementById('chat-container');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = type;
+
         const textDiv = document.createElement('div');
         textDiv.textContent = message;
         messageDiv.appendChild(textDiv);
-
-        // 이미지가 있다면 추가
-        if (imageUrl) {
-            const imageDiv = document.createElement('div');
-            imageDiv.className = 'image-message';
-            const img = document.createElement('img');
-            img.src = imageUrl;
-            img.alt = 'Generated Image';
-            img.style.maxWidth = '100%';
-            img.style.height = 'auto';
-            imageDiv.appendChild(img);
-            messageDiv.appendChild(imageDiv);
-        }
-
         messagesDiv.appendChild(messageDiv);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
@@ -100,42 +113,41 @@
                     body: formData
                 });
                 const data = await response.json();
-                
-                // 챗봇 응답 표시
-                appendMessage(data.reply, 'bot', data.image_url);
+                if (data.reply) {
+                    appendMessage(data.reply, 'bot');
+                    await saveMessage(auth.currentUser.uid, message, data.reply);
+                }
             } catch (error) {
                 appendMessage('Error: ' + error.message, 'bot');
             }
         }
     }
 
-    async function generateImage() {
-        const input = document.getElementById('user-input');
-        const prompt = input.value.trim();
-
-        if (prompt) {
-            input.value = '';  // 입력 필드 초기화
-
-            const formData = new FormData();
-            formData.append('message', prompt);
-
-            try {
-                const response = await fetch('/generate_image', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-
-                // 텍스트 없이 이미지 URL만 추가
-                if (data.image_url) {
-                    appendMessage('', 'bot', data.image_url); // 빈 문자열을 텍스트로 전달
-                }
-            } catch (error) {
-                appendMessage('Image generation error: ' + error.message, 'bot');
-            }
+    async function saveMessage(userId, userMessage, botReply) {
+        try {
+            await db.collection('chatHistory').add({
+                userId: userId,
+                userMessage: userMessage,
+                botReply: botReply,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (error) {
+            console.error('Error saving message:', error);
         }
     }
 
+    async function loadChatHistory(userId) {
+        try {
+            const chatHistory = await db.collection('chatHistory').where('userId', '==', userId).orderBy('timestamp').get();
+            chatHistory.forEach(doc => {
+                const data = doc.data();
+                appendMessage(data.userMessage, 'user');
+                appendMessage(data.botReply, 'bot');
+            });
+        } catch (error) {
+            console.error('Error loading chat history:', error);
+        }
+    }
 </script>
 </body>
 </html>
