@@ -9,12 +9,10 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
-# 환경 변수 로드
 dotenv_path = os.path.join(os.path.dirname(__file__), 'apikey', '.env')
 load_dotenv(dotenv_path)
 API_KEY = os.environ['OPENAI_API_KEY']
 client = OpenAI(api_key=API_KEY)
-
 app.secret_key = os.urandom(24)  # 세션 관리를 위한 시크릿 키
 
 # Firebase 초기화
@@ -24,7 +22,6 @@ if not firebase_admin._apps:
         'databaseURL': 'https://tokentalk-7662f-default-rtdb.firebaseio.com/'
     })
 
-# Firestore 초기화
 db = firestore.client()
 
 # Firebase 설정
@@ -41,7 +38,7 @@ firebase_config = {
 # 대화 기록을 저장할 딕셔너리 (사용자별로 구분)
 conversation_histories = {}
 
-# 이미지 관련 키워드 패턴
+# 이미지 키워드 
 IMAGE_KEYWORDS = [
     r'그림', r'이미지', r'사진', r'picture', r'image', r'photo', r'draw',
     r'생성해', r'만들어', r'그려', r'보여줘', r'визуализировать', 
@@ -49,12 +46,12 @@ IMAGE_KEYWORDS = [
 ]
 
 def contains_image_keywords(text):
-    """메시지에 이미지 관련 키워드가 포함되어 있는지 확인"""
+    """이미지 키워드 있는지"""
     pattern = '|'.join(IMAGE_KEYWORDS)
     return bool(re.search(pattern, text.lower()))
 
 def generate_image(prompt):
-    """DALL-E를 사용하여 이미지 생성"""
+    """DALL-E 이미지 생성"""
     try:
         response = client.images.generate(
             model="dall-e-3",
@@ -99,15 +96,15 @@ def home():
 def chat_page():
     if 'user_id' not in session:
         return redirect('/login')
-
+    
     user_id = session['user_id']
     chat_history = conversation_histories.get(user_id, [])
-    
     return render_template('chat.html', firebase_config=firebase_config, chat_history=chat_history)
 
 @app.route('/logout', methods=['POST'])
 def logout():
-    session.clear()  # 세션 지우기
+    # 세션 지우기
+    session.clear()  
     
     # 세션 쿠키 삭제
     resp = make_response(redirect(url_for('login_get')))
@@ -117,7 +114,6 @@ def logout():
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
-    
     return resp
 
 def save_conversation_history(user_id):
@@ -130,7 +126,6 @@ def load_chat_history(user_id):
     """Firebase에서 사용자 채팅 기록을 불러오기"""
     doc_ref = db.collection('chat_histories').document(user_id)
     history = doc_ref.get()
-    
     if history.exists:
         return history.to_dict().get('history', [])
     else:
@@ -144,12 +139,12 @@ def chat():
     user_message = request.form['message']
     user_id = session['user_id']
     
-    # 이미지 키워드 확인
+    # 이미지 키워드
     if contains_image_keywords(user_message):
         try:
             image_url = generate_image(user_message)
             if image_url:
-                # 이미지 URL과 함께 간단한 응답 메시지 반환
+                # 이미지 URL, 간단한 응답 메시지 반환
                 response_data = {
                     'reply': "이미지를 생성했습니다:",
                     'image_url': image_url
@@ -157,6 +152,7 @@ def chat():
                 # 대화 기록에 저장
                 if user_id not in conversation_histories:
                     conversation_histories[user_id] = []
+
                 conversation_histories[user_id].append({"role": "user", "content": user_message})
                 conversation_histories[user_id].append({"role": "assistant", "content": "이미지를 생성했습니다."})
                 save_conversation_history(user_id)
@@ -170,19 +166,18 @@ def chat():
                 'reply': f"이미지 생성 중 오류가 발생했습니다: {str(e)}"
             })
     
-    # 일반 텍스트 응답
+    #텍스트 응답
     try:
         if user_id not in conversation_histories:
             conversation_histories[user_id] = []
-        
+    
         conversation_histories[user_id].append({"role": "user", "content": user_message})
         response = client.chat.completions.create(
-            model="gpt-4o",  # 수정된 모델명
+            model="gpt-4o",  
             messages=conversation_histories[user_id]
         )
         bot_reply = response.choices[0].message.content
         conversation_histories[user_id].append({"role": "assistant", "content": bot_reply})
-        
         save_conversation_history(user_id)
         return jsonify({'reply': bot_reply})
         
